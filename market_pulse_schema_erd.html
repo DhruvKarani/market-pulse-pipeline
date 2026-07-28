@@ -1,0 +1,111 @@
+<style>
+#erd svg.erDiagram .divider path { stroke-opacity: 0.5; }
+#erd svg.erDiagram .row-rect-odd path,
+#erd svg.erDiagram .row-rect-odd rect,
+#erd svg.erDiagram .row-rect-even path,
+#erd svg.erDiagram .row-rect-even rect { stroke: none !important; }
+</style>
+<div id="erd"></div>
+<script type="module">
+import mermaid from 'https://esm.sh/mermaid@11/dist/mermaid.esm.min.mjs';
+const dark = matchMedia('(prefers-color-scheme: dark)').matches;
+await document.fonts.ready;
+mermaid.initialize({
+  startOnLoad: false,
+  theme: 'base',
+  fontFamily: '"Anthropic Sans", sans-serif',
+  themeVariables: {
+    darkMode: dark,
+    fontSize: '12px',
+    fontFamily: '"Anthropic Sans", sans-serif',
+    lineColor: dark ? '#9c9a92' : '#73726c',
+    textColor: dark ? '#c2c0b6' : '#3d3d3a',
+  },
+});
+const { svg } = await mermaid.render('erd-svg', `erDiagram
+  STOCKS ||--o{ STOCK_PRICES : has
+  STOCKS ||--o{ HEADLINE_STOCKS : mentioned_in
+  NEWS_HEADLINES ||--o{ HEADLINE_STOCKS : links
+  STOCK_PRICES ||--o{ ANOMALIES : triggers
+  INGESTION_LOG ||--o{ INGESTION_FAILURES : produces
+  STOCKS ||--o{ INGESTION_FAILURES : failed_for
+
+  STOCKS {
+    int stock_id PK
+    string ticker UK
+    string company_name
+    string exchange
+    string sector
+  }
+  STOCK_PRICES {
+    int stock_id PK,FK
+    date date PK
+    numeric open
+    numeric close
+    numeric adj_close
+    bigint volume
+  }
+  MACRO_INDICATORS {
+    date date PK
+    string indicator_name PK
+    numeric value
+  }
+  NEWS_HEADLINES {
+    int headline_id PK
+    text headline_text
+    date published_date
+    numeric sentiment_score
+  }
+  HEADLINE_STOCKS {
+    int headline_id PK,FK
+    int stock_id PK,FK
+  }
+  INGESTION_LOG {
+    int run_id PK
+    timestamptz run_timestamp
+    text source
+    text result
+    int total_expected
+    int total_failed
+  }
+  INGESTION_FAILURES {
+    int failure_id PK
+    int run_id FK
+    int stock_id FK
+    text error_message
+  }
+  ANOMALIES {
+    int anomaly_id PK
+    int stock_id FK
+    date date FK
+    text anomaly_type
+    text anomaly_category
+    numeric severity_score
+  }
+`);
+document.getElementById('erd').innerHTML = svg;
+
+document.querySelectorAll('#erd svg.erDiagram .node').forEach(node => {
+  const firstPath = node.querySelector('path[d]');
+  if (!firstPath) return;
+  const d = firstPath.getAttribute('d');
+  const nums = d.match(/-?[\d.]+/g)?.map(Number);
+  if (!nums || nums.length < 8) return;
+  const xs = [nums[0], nums[2], nums[4], nums[6]];
+  const ys = [nums[1], nums[3], nums[5], nums[7]];
+  const x = Math.min(...xs), y = Math.min(...ys);
+  const w = Math.max(...xs) - x, h = Math.max(...ys) - y;
+  const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+  rect.setAttribute('x', x); rect.setAttribute('y', y);
+  rect.setAttribute('width', w); rect.setAttribute('height', h);
+  rect.setAttribute('rx', '8');
+  for (const a of ['fill', 'stroke', 'stroke-width', 'class', 'style']) {
+    if (firstPath.hasAttribute(a)) rect.setAttribute(a, firstPath.getAttribute(a));
+  }
+  firstPath.replaceWith(rect);
+});
+
+document.querySelectorAll('#erd svg.erDiagram .row-rect-odd path, #erd svg.erDiagram .row-rect-even path').forEach(p => {
+  p.setAttribute('stroke', 'none');
+});
+</script>
