@@ -1,0 +1,47 @@
+name: Daily Market Pulse Pipeline
+
+# Cron runs in UTC, not IST. 8:00 PM IST = 2:30 PM UTC.
+# Chosen deliberately AFTER market close (3:30 PM IST) with several hours
+# buffer, since we found real evidence that yfinance can return incomplete
+# rows (NaN OHLC with real volume) if queried too soon after close.
+on:
+  schedule:
+    - cron: "30 14 * * 1-5"   # 14:30 UTC, Monday-Friday only (no point running on weekends - no trading data)
+  workflow_dispatch: {}        # allows manually triggering a run from GitHub's UI, useful for testing
+
+jobs:
+  run-pipeline:
+    runs-on: ubuntu-latest
+
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+      NEWSAPI_KEY: ${{ secrets.NEWSAPI_KEY }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # Order matters: prices first, since anomaly detection depends on
+      # today's price row existing. Macro and news are independent of each
+      # other and of prices, so their relative order doesn't matter, but
+      # they're kept before anomaly detection for a clean overall picture.
+      - name: Fetch daily stock prices
+        run: python src/fetch_daily_prices.py
+
+      - name: Fetch macro indicators
+        run: python src/fetch_macro_daily.py
+
+      - name: Fetch news + sentiment
+        run: python src/fetch_news_sentiment.py
+
+      - name: Run daily anomaly detection
+        run: python src/daily_anomaly_detection.py
