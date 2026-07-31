@@ -43,7 +43,5 @@ jobs:
       - name: Run daily anomaly detection
         run: python src/daily_anomaly_detection.py
 
-      # Runs last, after everything else, so the summary reflects the
-      # full day's results including anomalies just detected above
       - name: Send daily summary email
         run: python src/daily_summary_email.py
