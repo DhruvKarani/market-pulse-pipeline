@@ -63,12 +63,28 @@ Thresholds were tuned, not guessed: an initial volume ratio threshold of 2.0x pr
 
 **A separate daily email step, not relying on GitHub's built-in notifications** — GitHub Actions only emails on workflow *failure*, which tells you the job ran but nothing about what it actually found. Added a final pipeline step (`daily_summary_email.py`) that queries that day's `ingestion_log`, `anomalies`, and `news_headlines` and sends a formatted summary via Resend's API — separating "did the job run" (GitHub's job) from "what did the job find" (this project's job). Uses Resend's free test sender rather than a verified custom domain, since a personal project doesn't need production-grade email deliverability.
 
+## Phase 8b — Predictive modeling (exploratory)
+
+Extended the correlation study into an actual next-day return prediction model, scoped deliberately to keep the ML separate from the data engineering: Linear Regression predicting `next_day_return` (not raw price — predicting price directly is vulnerable to a naive "tomorrow = today" baseline looking deceptively accurate), trained with a **chronological** train/test split (not random, to avoid lookahead bias — a random split would let the model train on data from after the test period, an advantage no real deployment would have), evaluated against a naive baseline (predict 0% return) using RMSE/MAE.
+
+Two models were built:
+- **Model A** — price/volume features only (`daily_return`, `volume_ratio`, `price_zscore`), trained on the full 5-year backfilled dataset (~95,000 rows)
+- **Model B** — same features + average daily sentiment, trained on the ~30-day window where sentiment data actually exists (NewsAPI's free tier only provides ~30 days of historical headlines)
+
+**Result: Model A's RMSE (0.01680) was statistically indistinguishable from the naive baseline (0.01679)** — the model did not meaningfully outperform "just predict zero every day." Feature coefficients were near-zero across the board, consistent with the well-known finding that daily stock returns behave close to a random walk and simple technical features carry little standalone next-day predictive power. This is reported as an honest negative result, not hidden or massaged — a model that doesn't beat a naive baseline is itself a meaningful, defensible finding, and chasing a better number by adding features until something "wins" would be overfitting by search rather than real signal.
+
+Model B (9 training rows) was too small to draw any real conclusion from and is documented as exploratory only.
+
+**Known limitation surfaced during this phase:** an early version of Model A accidentally left-joined macro indicators (`macro_indicators`) against 5 years of price data and dropped rows with missing values — but since daily macro ingestion only recently started, this silently collapsed the training set from ~95,000 rows to ~150 before being caught via a row-count sanity check. Macro features were removed from both models for now; backfilling 5 years of macro history (yfinance + FRED both support this) is a documented future enhancement, not built in this phase.
+
 ## Known limitations / future work
 
 - 3 of 80 original tickers failed backfill due to real corporate actions (Tata Motors demerger, Zomato→Eternal rename) — one fixed (`ETERNAL.NS`), others documented as known gaps
 - Company-name-to-headline matching is a substring heuristic, not NER — will miss nicknames, abbreviations, and ticker-only mentions
 - Sentiment scoring via VADER doesn't understand financial-domain nuance or sarcasm
 - Sentiment-price correlation study needs more accumulated days of headline data before results are statistically meaningful
+- Macro indicators (`macro_indicators`) only have daily-forward coverage, not 5 years of backfilled history - excluded from Phase 8b modeling as a result; backfilling this is a natural next step
+- Model A's feature set (single-day return, volume ratio, z-score) showed no predictive signal beyond a naive baseline - multi-day momentum features, sector-relative signals, or a wider macro feature set (once backfilled) are the more promising next directions, rather than more complex models on the same weak features
 
 ## Results so far
 
