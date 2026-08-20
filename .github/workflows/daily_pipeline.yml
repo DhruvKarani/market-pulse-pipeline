@@ -43,5 +43,5 @@ jobs:
       - name: Run daily anomaly detection
         run: python src/daily_anomaly_detection.py
 
-      - name: Send daily summary email
-        run: python src/daily_summary_email.py
+      # - name: Send daily summary email
+      #   run: python src/daily_summary_email.py
