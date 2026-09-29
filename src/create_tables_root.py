@@ -84,30 +84,35 @@ DDL_STATEMENTS = [
     );
     """,
     """
+    -- One row per statistical test run by src/event_study.py. Append-only,
+    -- tagged by run_timestamp so results are tracked over time as more
+    -- data accumulates, rather than overwritten each run - lets us later
+    -- check e.g. "did the volatility effect hold up 3 months later" instead
+    -- of only ever seeing the latest snapshot.
     CREATE TABLE IF NOT EXISTS event_study_results (
-        result_id          SERIAL PRIMARY KEY,
-        run_timestamp       TIMESTAMPTZ NOT NULL DEFAULT now(),
-        test                TEXT NOT NULL,
-        label               TEXT NOT NULL,
-        anomaly_group       TEXT NOT NULL,
-        segment             TEXT NOT NULL,
-        skipped             BOOLEAN NOT NULL DEFAULT FALSE,
-        n_anomalous         INTEGER,
-        n_normal            INTEGER,
-        mean_anomalous      NUMERIC,
-        mean_normal         NUMERIC,
-        t_stat              NUMERIC,
-        p_value             NUMERIC,
-        ci_low              NUMERIC,
-        ci_high             NUMERIC,
-        mannwhitney_p       NUMERIC,
-        var_anomalous       NUMERIC,
-        var_normal          NUMERIC,
-        levene_stat         NUMERIC,
-        levene_p            NUMERIC,
-        mean_vol_anomalous  NUMERIC,
-        mean_vol_normal     NUMERIC,
-        vol_ratio           NUMERIC
+        result_id       SERIAL PRIMARY KEY,
+        run_timestamp    TIMESTAMPTZ NOT NULL DEFAULT now(),
+        test             TEXT NOT NULL,        -- 'mean_return' | 'levene_returns' | 'volatility'
+        label            TEXT NOT NULL,        -- e.g. '10-day forward return'
+        anomaly_group    TEXT NOT NULL,        -- 'market_event' | 'data_quality_issue'
+        segment          TEXT NOT NULL,        -- 'primary' | 'exploratory' | 'high_volume_spike' | 'low_volume_spike'
+        skipped          BOOLEAN NOT NULL DEFAULT FALSE,
+        n_anomalous      INTEGER,
+        n_normal         INTEGER,
+        mean_anomalous   NUMERIC,
+        mean_normal      NUMERIC,
+        t_stat           NUMERIC,
+        p_value          NUMERIC,
+        ci_low           NUMERIC,
+        ci_high          NUMERIC,
+        mannwhitney_p    NUMERIC,
+        var_anomalous    NUMERIC,
+        var_normal       NUMERIC,
+        levene_stat      NUMERIC,
+        levene_p         NUMERIC,
+        mean_vol_anomalous NUMERIC,
+        mean_vol_normal    NUMERIC,
+        vol_ratio          NUMERIC
     );
     """,
 ]

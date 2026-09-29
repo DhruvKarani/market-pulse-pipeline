@@ -1,0 +1,51 @@
+name: Weekly Event Study Validation
+
+# Deliberately a SEPARATE workflow from daily_pipeline.yml, and deliberately
+# NOT daily. The daily pipeline's job is same-day ingestion + same-day
+# anomaly flagging - it has to run every trading day. This job is a slow
+# statistical re-validation of the anomaly detector itself: re-running it
+# daily would mostly re-test the same ~5-year history plus one new day,
+# spam event_study_results with near-duplicate rows, and blur "operational
+# pipeline" together with "periodic model validation" in the Actions
+# history. Weekly is enough to notice if the results (e.g. the post-anomaly
+# volatility effect) drift as new data accumulates.
+#
+# Runs Saturday morning UTC (after the full trading week's data has landed
+# via the daily pipeline, all 5 trading days behind it) rather than a
+# weekday, so it never competes with or blocks the daily ingestion job.
+on:
+  schedule:
+    - cron: "0 6 * * 6"   # 06:00 UTC Saturday
+  workflow_dispatch: {}
+
+jobs:
+  run-event-study:
+    runs-on: ubuntu-latest
+
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Ensure event_study_results table exists
+        run: python create_tables.py
+
+      - name: Run event study (writes to DB + local CSV)
+        run: python src/event_study.py
+
+      - name: Upload results CSV as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: event-study-results
+          path: event_study_results.csv
+          retention-days: 90

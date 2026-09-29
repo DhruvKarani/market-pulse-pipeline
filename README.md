@@ -77,6 +77,22 @@ Model B (9 training rows) was too small to draw any real conclusion from and is 
 
 **Known limitation surfaced during this phase:** an early version of Model A accidentally left-joined macro indicators (`macro_indicators`) against 5 years of price data and dropped rows with missing values — but since daily macro ingestion only recently started, this silently collapsed the training set from ~95,000 rows to ~150 before being caught via a row-count sanity check. Macro features were removed from both models for now; backfilling 5 years of macro history (yfinance + FRED both support this) is a documented future enhancement, not built in this phase.
 
+## Phase 9 — Event study: does the anomaly detector predict anything? (statistical validation)
+
+The anomaly detector (Phase 4) flags days where price and volume both move sharply together — but flagging an unusual day and that day having predictive value for what happens *next* are two different claims. This phase tests the second one directly against ~5 years of real data (97,603 baseline-eligible stock-days across 78 stocks; 2,419 `market_event` flags, 1,313 `data_quality_issue` flags), using two-sample statistical tests rather than eyeballing a chart.
+
+**Design, and the bias it guards against:** forward returns for a flagged/normal day `t` are computed strictly from `t+1` onward, using `adj_close[t]` as the base price — never `t` itself, since the return that *produced* the flag already happened by that day's close. Measuring from `t` instead of `t+1` would partly re-test the same return that defined the anomaly, guaranteeing a circular, meaningless "finding." `market_event` (price move confirmed by volume) is tested as the primary hypothesis; `data_quality_issue` (price move *not* confirmed by volume — flagged by the detector's own logic as more likely a bad print) is kept as a separate, exploratory comparison rather than pooled in, since pooling would let noisy data quietly inflate the headline result.
+
+**Result 1 — no significant directional return effect.** Welch's t-test comparing mean forward return after `market_event` days vs. normal days across 1/3/5/10-day horizons: p = 0.365, 0.782, 0.424, 0.017. Three of four horizons are nowhere near significance; the one nominal hit (10-day) doesn't survive a Bonferroni correction for testing four horizons (α/4 = 0.0125), and the underlying effect (0.90% vs 0.60% mean return) is smaller than typical transaction costs on these names. **Honest conclusion: the detector does not predict which direction a stock moves next**, and this is reported as a real finding, not a failed one — a rule-based anomaly detector isn't obligated to also be a return-prediction model, and testing that claim directly (rather than assuming it) is the point of doing statistics instead of taking the detector's usefulness on faith.
+
+**Result 2 — a real, cross-validated volatility effect.** The null result above only tests *direction*; it says nothing about whether price action gets *choppier* after a flag. Realized volatility (stdev of daily returns over the forward window, same lookahead-bias guard) is 25% higher than normal 3 days after a `market_event` flag, decaying to 18% and 11% higher by day 5 and day 10 (Welch's t-test p < 10⁻¹⁴ at every horizon). This survives three independent checks: (a) Levene's test on the endpoint-return spread agrees directionally at every horizon, (b) the two measures are internally consistent — `√(variance ratio) ≈ volatility ratio` holds within ~2% at every horizon, which two unrelated calculations wouldn't do by coincidence, and (c) segmenting `market_event` by volume-spike strength shows a clean dose-response relationship (3-day volatility ratio: 1.31x for high-volume-confirmed flags vs. 1.19x for low — stronger signal, stronger effect, the shape a real relationship should have, not noise).
+
+**A caveat surfaced by the exploratory comparison, not yet resolved:** `data_quality_issue` — the category the detector's own logic flags as likely-noisy — shows a *cleaner, stronger* mean-return effect than `market_event` does (e.g. 10-day: +0.53pp, p = 0.0006, no decay pattern). That's backwards from what you'd want if the effect were real market behavior, and the leading hypothesis is a split/bonus-issue adjustment-lag artifact in `adj_close` rather than genuine signal — flagged here explicitly rather than left out, since a real statistical validation reports the finding that complicates the story, not just the ones that support it. `data_quality_issue`'s volatility effect (4–7% higher, vs. `market_event`'s 11–25%) is much weaker, which is at least evidence the volatility finding isn't being driven by the same artifact.
+
+**What this phase demonstrates methodologically:** lookahead-bias-safe return construction, Welch's t-test (not Student's — no basis to assume equal variance between groups) with 95% confidence intervals, a non-parametric Mann-Whitney cross-check given fat-tailed return distributions, explicit multiple-comparison correction rather than cherry-picking the significant horizon, and reporting a null result on the originally-hypothesized effect (direction) alongside a genuine positive result on a different, related one (volatility) — rather than reframing the question after the fact to manufacture a win.
+
+Runs weekly via `.github/workflows/event_study.yml` (deliberately not daily — this is slow statistical re-validation, not same-day ingestion) and writes every test result to the `event_study_results` table, append-only with a `run_timestamp`, so findings can be tracked for drift as more data accumulates rather than living only in a point-in-time snapshot.
+
 ## Known limitations / future work
 
 - 3 of 80 original tickers failed backfill due to real corporate actions (Tata Motors demerger, Zomato→Eternal rename) — one fixed (`ETERNAL.NS`), others documented as known gaps
@@ -85,6 +101,8 @@ Model B (9 training rows) was too small to draw any real conclusion from and is 
 - Sentiment-price correlation study needs more accumulated days of headline data before results are statistically meaningful
 - Macro indicators (`macro_indicators`) only have daily-forward coverage, not 5 years of backfilled history - excluded from Phase 8b modeling as a result; backfilling this is a natural next step
 - Model A's feature set (single-day return, volume ratio, z-score) showed no predictive signal beyond a naive baseline - multi-day momentum features, sector-relative signals, or a wider macro feature set (once backfilled) are the more promising next directions, rather than more complex models on the same weak features
+- `adj_close` is currently 100% identical to `close` across all 99,241 price rows — either no ticker in the 78-stock universe had a split/bonus issue in this 5-year window, or the ingestion script isn't actually populating split/dividend-adjusted values separately from raw close. Needs a direct check of `src/fetch_daily_prices.py` against a known-split stock; until resolved, the Phase 9 event study's leading hypothesis for the suspicious `data_quality_issue` mean-return effect (adjustment-lag artifact) can't be directly confirmed or ruled out
+- Phase 9's event study currently tests `market_event` in aggregate; it doesn't yet control for sector, market-cap, or macro regime (e.g. whether flagged days cluster during high-volatility market periods generally, which would inflate the post-flag volatility measurement independent of the detector doing anything meaningful) — a useful next step before treating the volatility finding as fully causal rather than just a robust statistical association
 
 ## Results so far
 
@@ -93,10 +111,11 @@ Model B (9 training rows) was too small to draw any real conclusion from and is 
 - **3,732** anomalies detected across 78 stocks after threshold tuning: **65%** classified as `market_event` (price move confirmed by volume), **35%** as `data_quality_issue` (price move unconfirmed by volume)
 - **2** real matching bugs found and fixed in the news-to-stock linking logic during manual verification of live output (substring false-positive, over-aggressive name truncation)
 - 4 macro indicators (USD/INR, crude oil, S&P 500, Fed funds rate) ingested successfully from two independent sources in a single daily run
+- Event study (Phase 9) tested 97,603 baseline-eligible stock-days: no significant post-flag directional return effect after multiple-comparison correction, but a statistically robust and cross-validated post-flag volatility effect (up to 1.31x normal daily volatility for volume-confirmed flags, decaying over ~10 trading days)
 
 ## Tech stack
 
-Python · PostgreSQL (Supabase) · SQLAlchemy · yfinance · FRED API · NewsAPI · VADER · Resend · pandas · GitHub Actions
+Python · PostgreSQL (Supabase) · SQLAlchemy · yfinance · FRED API · NewsAPI · VADER · SciPy · Resend · pandas · GitHub Actions
 
 ## Setup
 
@@ -106,3 +125,4 @@ Python · PostgreSQL (Supabase) · SQLAlchemy · yfinance · FRED API · NewsAPI
 4. Run `python src/backfill.py` for historical data (one-time)
 5. Run `python src/batch_anomaly_detection.py` to scan historical anomalies
 6. Going forward, `src/fetch_daily_prices.py`, `src/fetch_macro_daily.py`, `src/fetch_news_sentiment.py`, `src/daily_anomaly_detection.py`, and `src/daily_summary_email.py` run automatically via `.github/workflows/daily_pipeline.yml`
+7. `python src/event_study.py` re-runs the statistical validation (Phase 9) against current data and writes results to `event_study_results`; runs weekly via `.github/workflows/event_study.yml`, or trigger manually via `workflow_dispatch`

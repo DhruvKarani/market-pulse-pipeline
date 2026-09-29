@@ -5,3 +5,4 @@ yfinance
 pandas
 vaderSentiment
 newsapi-python
+scipy

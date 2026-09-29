@@ -83,13 +83,40 @@ DDL_STATEMENTS = [
         FOREIGN KEY (stock_id, date) REFERENCES stock_prices(stock_id, date)
     );
     """,
+    """
+    CREATE TABLE IF NOT EXISTS event_study_results (
+        result_id          SERIAL PRIMARY KEY,
+        run_timestamp       TIMESTAMPTZ NOT NULL DEFAULT now(),
+        test                TEXT NOT NULL,
+        label               TEXT NOT NULL,
+        anomaly_group       TEXT NOT NULL,
+        segment             TEXT NOT NULL,
+        skipped             BOOLEAN NOT NULL DEFAULT FALSE,
+        n_anomalous         INTEGER,
+        n_normal            INTEGER,
+        mean_anomalous      NUMERIC,
+        mean_normal         NUMERIC,
+        t_stat              NUMERIC,
+        p_value             NUMERIC,
+        ci_low              NUMERIC,
+        ci_high             NUMERIC,
+        mannwhitney_p       NUMERIC,
+        var_anomalous       NUMERIC,
+        var_normal          NUMERIC,
+        levene_stat         NUMERIC,
+        levene_p            NUMERIC,
+        mean_vol_anomalous  NUMERIC,
+        mean_vol_normal     NUMERIC,
+        vol_ratio           NUMERIC
+    );
+    """,
 ]
 
 def create_all_tables():
     with engine.begin() as conn:
         for statement in DDL_STATEMENTS:
             conn.execute(text(statement))
-    print("All 8 tables created (or already existed).")
+    print("All 9 tables created (or already existed).")
 
 if __name__ == "__main__":
     create_all_tables()
