@@ -10,9 +10,22 @@ are not duplicated (see note on uniqueness below).
 """
 
 import os
+import sys
 import pandas as pd
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
+
+# This script lives at repo root, but anomaly_detection.py (the module it
+# depends on) lives in src/ - there is no root-level copy. Running this
+# exactly as the README instructs (`python batch_anomaly_detection.py` from
+# repo root) previously failed immediately with
+# `ModuleNotFoundError: No module named 'anomaly_detection'`, since Python
+# only searches the script's own directory (repo root) and site-packages,
+# not src/, for a bare top-level import. Adding src/ to sys.path before the
+# import - rather than moving the file or converting the repo to a package
+# layout, either of which would be a bigger restructuring than this bug
+# warrants - fixes the crash with a minimal, localized change.
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "src"))
 
 from anomaly_detection import detect_anomalies_for_stock
 

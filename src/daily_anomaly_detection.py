@@ -25,8 +25,21 @@ load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL")
 engine = create_engine(DATABASE_URL)
 
-# Need the rolling window's worth of prior history PLUS today itself
-DAYS_TO_FETCH = ROLLING_WINDOW + 1
+# Need the rolling window's worth of PRIOR RETURNS, plus today, to get a
+# non-NaN baseline. compute_baselines() does daily_return.shift(1) before
+# rolling(ROLLING_WINDOW) - the shift pushes pct_change()'s always-NaN first
+# value one position forward, so a window of exactly ROLLING_WINDOW+1 rows
+# still has that NaN inside the 20-day window used for "today"'s baseline,
+# and rolling().mean()/.std() return NaN whenever any value in the window is
+# NaN (min_periods defaults to the window size, counting only non-null
+# observations). Net effect: ROLLING_WINDOW+1 rows of price history produces
+# ROLLING_WINDOW+1 rows of OHLCV, but only ROLLING_WINDOW-1 usable prior
+# returns after the shift - one short of the 20 needed - so classify_row()
+# always sees a NaN baseline and always returns None. Confirmed by direct
+# test: 21 rows -> price_zscore=NaN; 22 rows -> price_zscore resolves and
+# classify_row returns a real result. +2, not +1, is what actually supplies
+# 20 valid prior returns to the rolling window.
+DAYS_TO_FETCH = ROLLING_WINDOW + 2
 
 
 def get_all_stock_ids(conn) -> list[int]:

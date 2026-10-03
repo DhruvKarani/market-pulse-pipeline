@@ -20,7 +20,26 @@ Run daily: python fetch_news_sentiment.py
 
 import os
 import re
-from datetime import datetime, timezone, date
+from datetime import datetime, timezone, timedelta, date
+
+# NSE trading days are defined in IST, but NewsAPI's publishedAt is UTC.
+# A headline published late in the UTC evening (e.g. 20:00 UTC) is already
+# the NEXT calendar day in IST (01:30 IST, UTC+5:30) - straight-slicing the
+# UTC timestamp's first 10 characters silently mismatches some headlines to
+# the wrong trading day, in either direction. This only shifts a headline
+# across the date boundary (roughly UTC 18:30-23:59, IST's tail end of the
+# day) - most headlines are unaffected - but it's a real, previously
+# undocumented assumption, not a true UTC==IST equivalence.
+IST = timezone(timedelta(hours=5, minutes=30))
+
+
+def to_ist_date(published_at_iso: str) -> str:
+    """
+    Converts a NewsAPI UTC publishedAt timestamp (e.g. '2024-01-15T20:30:00Z')
+    to the IST calendar date it actually falls on, as 'YYYY-MM-DD'.
+    """
+    dt_utc = datetime.fromisoformat(published_at_iso.replace("Z", "+00:00"))
+    return dt_utc.astimezone(IST).date().isoformat()
 
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
@@ -197,7 +216,11 @@ def main():
     with engine.begin() as conn:
         for article in articles:
             try:
-                published_date = article["published_at"][:10] if article["published_at"] else date.today().isoformat()
+                published_date = (
+                    to_ist_date(article["published_at"])
+                    if article["published_at"]
+                    else date.today().isoformat()
+                )
                 sentiment = score_sentiment(article["title"])
 
                 headline_id = insert_headline(
