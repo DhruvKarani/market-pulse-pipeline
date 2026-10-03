@@ -72,12 +72,12 @@ Linear Regression predicting next-day return, chronological train/test split, be
 
 ## Phase 9 — Event study (statistical validation of the anomaly detector)
 
-Tests whether `market_event`-flagged days predict what happens *next* (97,603 stock-days, 2,419 flags). Forward returns computed from `t+1` onward to avoid lookahead bias.
+Tests whether `market_event`-flagged days predict what happens *next* (97,603 baseline-eligible stock-days, 2,419 flags; individual tests use ~95.5K–96.2K rows after each horizon's forward-window trim). Forward returns computed from `t+1` onward to avoid lookahead bias.
 
 | Result | Finding |
 |---|---|
-| **Direction** | No significant effect (p = 0.365 / 0.782 / 0.424 / 0.017 at 1/3/5/10 days; the 10-day hit doesn't survive Bonferroni correction). Detector doesn't predict direction. |
-| **Volatility** | Real effect — 25% / 18% / 11% higher than normal at 3/5/10 days (p < 10⁻¹⁴), cross-validated 4 ways (Levene's test, `√variance ratio ≈ vol ratio`, volume-spike dose-response, date-clustered bootstrap). |
+| **Direction** | No significant effect (p = 0.365 / 0.782 / 0.424 / 0.017 at 1/3/5/10 days; the 10-day hit doesn't survive Bonferroni correction). Detector doesn't predict direction. Note: Mann-Whitney disagrees with Welch at the 1-day horizon (p=0.0006 vs 0.365) — expected, since they test different things (distribution shape vs. mean), not a contradiction. |
+| **Volatility** | Real effect — 25% / 18% / 11% higher than normal at 3/5/10 days (p < 10⁻¹⁴), cross-validated 4 ways (Levene's test, `√variance ratio ≈ vol ratio`, volume-spike dose-response, date-clustered bootstrap: 95% CI [1.063, 1.155] on the 10-day ratio, properly weighted by how many times each date is resampled). |
 
 Open caveat: `data_quality_issue` shows a cleaner mean-return effect than `market_event` does — backwards from expected, cause unresolved, flagged not hidden. Runs weekly via `event_study.yml`, writes to `event_study_results`.
 
